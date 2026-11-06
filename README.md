@@ -1,80 +1,176 @@
-# Speech Emotion Recognition: Residual and Pretrained Models
+# Speech Emotion Recognition
 
-Source code for the revised **v10** four-class speech emotion recognition (SER) study using RAVDESS and TESS. Classes are `neutral`, `happy`, `sad`, and `angry`.
+**Speaker-independent experiments with residual networks and pretrained speech representations.**
 
-The historical repository name, `RealTime-SER-ResNet`, is retained. The current inference pipeline processes **complete audio files**; it does not establish microphone streaming or first-prediction latency.
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![Release](https://img.shields.io/badge/Source_release-v10-0F766E)
+![Task](https://img.shields.io/badge/Task-4_emotion_classes-6D28D9)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/nzrnaghme/RealTime-SER-ResNet/blob/main/SER_v10_Colab.ipynb)
 
-[فارسی](README_FA.md) · [Source release notes](PUBLICATION_NOTES.md)
+[Overview](#overview) · [Results](#recorded-results) · [Quick start](#quick-start) · [emotion2vec](#emotion2vec-workflow) · [Repository guide](#repository-guide) · [فارسی](README_FA.md)
 
-## Source release
+## Overview
 
-This repository contains the Python training, extraction, inference, verification and test scripts, an output-free Colab notebook, and pinned dependency files. **It does not contain trained weights, feature caches, audio, saved predictions, experiment manifests, or archived run metadata.** Running the commands below creates a new local experiment; cloning this repository alone does not reproduce the original archived run.
+This project studies four-class speech emotion recognition on **RAVDESS** and **TESS**, with a focus on how models perform on speakers excluded from training. It compares compact convolutional and residual networks with an acoustic SVM and frozen **emotion2vec** representations under an explicit evaluation protocol.
 
-The study compares matched CNN/residual models, clipping/scheduling ablations, an acoustic SVM, and frozen original emotion2vec representations with logistic-regression and RBF-SVM heads. The previously recorded validation-selected emotion2vec + SVM system achieved **67.87% test accuracy, 68.17% UAR, 64.42% macro-F1, and 72.50% corpus-balanced UAR**. These are recorded research results, not outcomes produced by downloading the source. They do not establish an improvement over the older paper's 74.4% accuracy, which used a different evaluation protocol.
+The implementation accompanies the research manuscript *Speaker Independent Speech Emotion Recognition with Residual and Pretrained Models*. Its contribution is a controlled experimental comparison, including negative results and deployment measurements; the underlying learning methods are established.
 
-## Data
+The code provides:
 
-Download the official [RAVDESS audio-only speech archive](https://zenodo.org/records/1188976) and [TESS dataset](https://doi.org/10.5683/SP2/E8H2MF), respecting their licenses. Extract them beneath `data/RAVDESS` and `data/TESS`. Do not substitute previously augmented or merged data.
+- **Speaker-disjoint evaluation:** explicit training, validation, and test partitions, with duplicate detection and training-only normalization.
+- **Controlled model comparisons:** matched CNN/residual models, gradient-clipping and learning-rate-scheduling ablations, and three training seeds.
+- **Complementary baselines:** 252 acoustic descriptors with an RBF SVM, and frozen emotion2vec embeddings with logistic-regression or SVM heads.
+- **Practical inference:** command-line prediction, a Tk desktop interface, and CPU benchmarking for complete audio files.
 
-The inventory code defines fixed speaker-disjoint partitions, detects duplicates, and writes local manifests and checksums. TESS has only two speakers and is absent from validation in this protocol. Lexical content is not held out. These acted English recordings do not establish performance on natural emotions, other languages, or clinical applications.
+The four output labels are **Neutral · Happy · Sad · Angry**. The historical repository name, `RealTime-SER-ResNet`, is retained; the implemented inference workflow analyzes a complete recording. Streaming and microphone-to-first-prediction latency have not been established.
 
-## Compact models: installation and a fresh experiment
+> **Source release:** this repository includes code, dependency lists, and an output-free notebook. Download the official datasets and generate model artifacts locally. Trained weights, feature caches, recorded predictions, and archived experiment metadata are not included here. See [release notes](PUBLICATION_NOTES.md).
 
-Use Python 3.12 and run the following Bash commands from the repository root. The compact and emotion2vec pipelines need separate environments because their pinned dependencies differ.
+## Processing pipeline
+
+```mermaid
+flowchart LR
+    A["16 kHz audio"] --> B["128 × 128 log-Mel"]
+    A --> C["252 acoustic features"]
+    A --> D["Frozen emotion2vec"]
+    B --> E["CNN / residual models"]
+    C --> F["RBF SVM"]
+    D --> G["768-D embedding"]
+    G --> H["Logistic regression / SVM"]
+    E --> I["Four emotion labels"]
+    F --> I
+    H --> I
+```
+
+Compact neural models share the same learned layers and **101,332 total parameters**; the residual variant adds identity shortcuts. Model selection uses validation UAR. Test data are reserved for evaluation after the comparison is frozen.
+
+## Recorded results
+
+The following results come from the archived v10 experiment on a fixed **912-recording, speaker-disjoint test partition**. They are reported for context; cloning the source does not download the artifacts needed to replay that exact run. All scores are percentages.
+
+| Model | Accuracy | UAR | Macro-F1 | Corpus-balanced UAR |
+|---|---:|---:|---:|---:|
+| Acoustic SVM | **69.30** | **69.58** | 63.89 | 66.95 |
+| emotion2vec + logistic regression | 63.49 | 63.63 | 61.63 | 71.52 |
+| **emotion2vec + RBF SVM** | 67.87 | 68.17 | **64.42** | **72.50** |
+
+**UAR** is mean recall across the four classes. **Corpus-balanced UAR** gives equal weight to RAVDESS UAR and TESS UAR.
+
+Validation selected emotion2vec + RBF SVM with `C = 1`. Compared with the acoustic SVM, its corpus-balanced UAR increases by **5.55 percentage points**, while pooled accuracy decreases by **1.43 points**. Residual connections and optimization controls showed no consistent advantage in the matched compact-model experiments.
+
+A substantial remaining failure is **3.50% Angry recall on the held-out TESS speaker**. The earlier manuscript's 74.4% accuracy used a different evaluation protocol and is not a directly comparable baseline. These findings motivate reporting both pooled and per-corpus performance.
+
+## Quick start
+
+### 1. Set up the environment
+
+Use **Python 3.12**. Run commands from the repository root in Bash; on Windows, use WSL/Git Bash or adapt activation and multiline commands for PowerShell.
 
 ```bash
 git clone https://github.com/nzrnaghme/RealTime-SER-ResNet.git
 cd RealTime-SER-ResNet
+
 python3.12 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
 python -m pip check
+```
 
+The compact pipeline and emotion2vec use separate pinned environments. A GPU is not required by these examples. The desktop interface additionally requires Tkinter and a graphical desktop.
+
+### 2. Prepare the official datasets
+
+| Dataset | Official source | Local audio directory |
+|---|---|---|
+| RAVDESS | [Audio-only speech recordings](https://zenodo.org/records/1188976) | `data/RAVDESS` |
+| TESS | [Toronto emotional speech set](https://doi.org/10.5683/SP2/E8H2MF) | `data/TESS` |
+
+Download and extract the original recordings, respecting their licenses. The extractor searches the supplied directories recursively. Avoid previously augmented or merged datasets when following this protocol.
+
+```bash
 python ser_data_v10.py \
-  --ravdess data/RAVDESS --tess data/TESS \
-  --out runs/new_features --workers 2
+  --ravdess data/RAVDESS \
+  --tess data/TESS \
+  --out runs/new_features \
+  --workers 2
+```
 
+This produces the manifest, split counts, feature metadata, and feature cache for your local data. The archived experiment contained **2,271 unique recordings** after removing one exact RAVDESS duplicate:
+
+| Partition | RAVDESS speakers | TESS speaker | Total recordings |
+|---|---|---|---:|
+| Training | Actors 01–16 | YAF | 1,247 |
+| Validation | Actors 17–20 | — | 112 |
+| Test | Actors 21–24 | OAF | 912 |
+
+TESS has only two speakers, so this three-way speaker split has no TESS validation speaker. Words and sentences are not held out independently.
+
+### 3. Train the primary comparisons
+
+```bash
 python ser_models_v10.py train \
   --features runs/new_features/features.npz \
   --manifest runs/new_features/manifest.csv \
   --output runs/new_foldA \
-  --models svm cnn r0 r1 r2 r3 --seeds 17 42 73 --epochs 25
+  --models svm cnn r0 r1 r2 r3 \
+  --seeds 17 42 73 \
+  --epochs 25
 ```
 
-On Windows, activate the environment using `.venv\Scripts\Activate.ps1` in PowerShell. `cnn` is the matched non-residual model; `r0` has no clipping/scheduler, `r1` uses clipping, `r2` uses scheduling, and `r3` uses both. The supplementary masking/dropout implementation is in `ser_models_regularized_v10.py`.
+| Configuration | Residual connections | Gradient clipping | LR scheduling |
+|---|:---:|:---:|:---:|
+| `cnn` | — | — | — |
+| `r0` | ✓ | — | — |
+| `r1` | ✓ | ✓ | — |
+| `r2` | ✓ | — | ✓ |
+| `r3` | ✓ | ✓ | ✓ |
 
-Review validation results and finish model choices **before** freezing and evaluating the held-out test partition:
+`svm` runs the acoustic baseline. The separate `ser_models_regularized_v10.py` script adds feature masking and dropout and exposes the same `train`, `freeze`, and `evaluate` interface. Use a separate output directory for that experiment.
+
+### 4. Freeze selections and evaluate
+
+Review validation results and finish configuration choices before evaluating the held-out test set.
 
 ```bash
 python ser_models_v10.py freeze --output runs/new_foldA
+
 python ser_models_v10.py evaluate \
   --features runs/new_features/features.npz \
   --manifest runs/new_features/manifest.csv \
   --output runs/new_foldA
 ```
 
-Use fresh output directories for new experiments. Frozen campaigns must not be retrained in place. Additional tuning after seeing test results needs an independent evaluation.
+Use a fresh output directory for each new experiment. A frozen campaign cannot be retrained in place. Further tuning informed by test results requires an independent evaluation.
 
-## Predict with your newly trained acoustic SVM
+### 5. Predict from an audio file
 
-After training above, provide a complete readable audio file:
+After training the acoustic SVM above:
 
 ```bash
 python ser_infer.py recording.wav \
   --model runs/new_foldA/svm/best.joblib \
   --feature-metadata runs/new_features/feature_metadata.json \
   --output prediction.json
+```
 
+To launch the desktop interface:
+
+```bash
 python ser_demo.py \
   --model runs/new_foldA/svm/best.joblib \
   --metadata runs/new_features/feature_metadata.json
 ```
 
-The desktop interface requires Tkinter and a graphical desktop. Neural inference uses a generated `best.keras` checkpoint with its neighboring normalizer and configuration files. SVM decision scores are not probabilities; softmax/logistic scores are not calibrated confidence or measured accuracy.
+For neural inference, pass the generated `best.keras` checkpoint and preserve its neighboring normalizer, configuration, and result files. SVM decision values are not probabilities; softmax and logistic scores are not calibrated confidence or measured accuracy.
 
-## emotion2vec: acquire the encoder, extract, and fit
+## emotion2vec workflow
 
-The source includes a downloader for the exact original emotion2vec base checkpoint, with revision and checksum verification. The external checkpoint is approximately 1.126 GB. Dataset and model licenses remain independent of this project.
+The pretrained branch uses the **original emotion2vec base** encoder. The downloader pins its revision and checksums; the external checkpoint is approximately **1.126 GB**. Use a separate environment from the compact pipeline.
+
+<details>
+<summary><strong>Installation, feature extraction, and head training</strong></summary>
+
+Open a fresh shell at the repository root, then run:
 
 ```bash
 python3.12 -m venv .venv-emotion2vec
@@ -84,30 +180,54 @@ python -m pip install -r requirements_emotion2vec.txt
 python -m pip check
 
 python download_emotion2vec.py --output emotion2vec_base
+
 python ser_data_v10.py \
   --ravdess data/RAVDESS --tess data/TESS \
   --out runs/emotion2vec_inventory --inventory-only
+
 python emotion2vec_baseline_v10.py extract \
   --model emotion2vec_base \
   --manifest runs/emotion2vec_inventory/manifest.csv \
   --out runs/new_emotion2vec_features.npz --threads 2
+
 python emotion2vec_baseline_v10.py fit \
   --manifest runs/emotion2vec_inventory/manifest.csv \
   --features runs/new_emotion2vec_features.npz \
   --out runs/new_logistic_head
+
 python emotion2vec_svm_v10.py \
   --manifest runs/emotion2vec_inventory/manifest.csv \
   --features runs/new_emotion2vec_features.npz \
   --out runs/new_svm_head
 ```
 
-Both fitting scripts use training data for fitting and validation UAR for choosing among their bounded candidate sets. They write a local `selection.json` identifying the chosen model. `emotion2vec_predictor_v10.py` provides file inference through `--model` (the encoder directory) and `--head` (your selected `.joblib` file).
+Both head-fitting scripts train on the training partition and select among bounded candidate sets using validation UAR. Each writes a local `selection.json` identifying the selected `.joblib` model. For new-file inference, `emotion2vec_predictor_v10.py` takes the encoder directory through `--model` and the selected head through `--head`.
 
-`evaluate_emotion2vec_v10.py` is included as source, but requires an explicit global freeze record and its matching artifacts. Those original records are not published here. Do not treat a newly fitted model as the archived experiment or claim exact replay without the matching records. The included benchmark/verification scripts likewise require the local inputs named in their arguments.
+`evaluate_emotion2vec_v10.py` requires an explicit global freeze record and matching artifacts. Those archived records are not included in this source release; the commands above create a new local experiment.
 
-## Colab and checks
+</details>
 
-[SER_v10_Colab.ipynb](SER_v10_Colab.ipynb) contains the primary CNN/residual/acoustic-SVM workflow, including official-data downloads and checksum checks. Use a fresh Python 3.12 runtime and run cells in order. It starts with test evaluation disabled (`RUN_HELD_OUT = False`); enable it only after closing validation-based choices. The notebook does not run the separate regularized or emotion2vec experiments. Save generated outputs before the temporary runtime expires.
+## Run in Colab
+
+[Open the notebook in Colab](https://colab.research.google.com/github/nzrnaghme/RealTime-SER-ResNet/blob/main/SER_v10_Colab.ipynb) to run the primary CNN, residual, and acoustic-SVM workflow, including official-data downloads and checksum checks.
+
+Use a Python 3.12 runtime and run cells in order. Held-out evaluation starts disabled through `RUN_HELD_OUT = False`; enable it only after completing validation-based choices. The regularized and emotion2vec experiments use their separate scripts. Save generated outputs before the temporary runtime expires.
+
+## Repository guide
+
+| Purpose | Main files |
+|---|---|
+| Data inventory and feature extraction | [ser_data_v10.py](ser_data_v10.py) |
+| Compact models and ablations | [ser_models_v10.py](ser_models_v10.py), [ser_models_regularized_v10.py](ser_models_regularized_v10.py) |
+| Pretrained encoder and classifier heads | [download_emotion2vec.py](download_emotion2vec.py), [emotion2vec_baseline_v10.py](emotion2vec_baseline_v10.py), [emotion2vec_svm_v10.py](emotion2vec_svm_v10.py) |
+| File inference and desktop interface | [ser_infer.py](ser_infer.py), [emotion2vec_predictor_v10.py](emotion2vec_predictor_v10.py), [ser_demo.py](ser_demo.py) |
+| CPU measurements | [benchmark_multiclip.py](benchmark_multiclip.py) |
+| Artifact evaluation and audits | [evaluate_emotion2vec_v10.py](evaluate_emotion2vec_v10.py), `verify_*.py` |
+| Tests and notebook | [test_ser_data_v10.py](test_ser_data_v10.py), [test_ser_infer.py](test_ser_infer.py), [SER_v10_Colab.ipynb](SER_v10_Colab.ipynb) |
+
+The audit utilities require their corresponding local artifacts. In particular, acquisition verification expects an external `tess_record.json`, and encoder audits require matching provenance/log files. These utilities are not prerequisites for the quick-start commands.
+
+## Validation and reproducibility
 
 Run the existing synthetic checks in the compact environment:
 
@@ -115,6 +235,19 @@ Run the existing synthetic checks in the compact environment:
 python -m unittest -v test_ser_data_v10 test_ser_infer
 ```
 
-These tests verify parsing, duplicate handling, split rules, and inference consistency. They are not SER performance experiments. No raw data, generated models, or test results are committed by these commands; keep generated files local unless you separately choose to release them.
+These checks cover dataset parsing, duplicate handling, split rules, feature consistency, and saved-pipeline inference. They do not measure recognition accuracy. [SHA256SUMS.json](SHA256SUMS.json) records the source snapshot's file checksums; [publication notes](PUBLICATION_NOTES.md) distinguish completed preparation checks from experiments requiring a fully configured environment.
 
-No project-wide license grant has been selected for the project code. Dataset and model licenses apply separately.
+For reproducible comparisons, preserve the generated manifest, feature metadata, normalizers, model configurations, selection records, and dependency environment together. Seed variation measures training variability on the fixed split, not uncertainty across a population of new speakers.
+
+## Scope and limitations
+
+- Evaluation uses acted English speech and four emotion labels. Natural conversation, Persian speech, and clinical use were not evaluated.
+- The mixed test partition is dominated by TESS, with only one held-out TESS speaker. Read pooled, per-corpus, and classwise metrics together.
+- Combining corpora does not establish cross-corpus generalization. No leave-one-corpus-out result is claimed.
+- CPU processing time concerns an already available complete file. It excludes recording, model initialization, and UI overhead; RTF below one does not establish streaming latency.
+
+## Attribution and licensing
+
+This work uses [RAVDESS](https://zenodo.org/records/1188976), [TESS](https://doi.org/10.5683/SP2/E8H2MF), and the original emotion2vec encoder. Follow each dataset's and pretrained model's license and attribution requirements. The downloader retrieves the upstream model license with the encoder assets.
+
+No project-wide license grant has been selected for the project code. The accompanying manuscript is a research manuscript; this repository does not imply acceptance or publication at a conference.

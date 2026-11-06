@@ -1,0 +1,4 @@
+# Keep source checksum verification stable across operating systems.
+* -text
+*.py diff=python
+

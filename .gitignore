@@ -1,0 +1,43 @@
+# Python environments and caches
+.venv*/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ipynb_checkpoints/
+.DS_Store
+Thumbs.db
+
+# Local credentials and editor settings
+.env
+.env.*
+*.pem
+*.key
+.vscode/
+.idea/
+
+# Local data, trained artifacts, and run metadata
+data/
+runs/
+experiments/
+precomputed/
+data_inventory/
+emotion2vec_base/
+original_audit/
+*.wav
+*.flac
+*.mp3
+*.joblib
+*.keras
+*.npz
+*.pt
+*.pth
+*.bin
+*.safetensors
+*.onnx
+*.h5
+prediction.json
+*.log
+*.tmp
+.*.joblib.*
+
